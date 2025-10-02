@@ -12,7 +12,7 @@ if (isset($_SESSION['user_id'])) {
             header("Location: vendor/dashboard.php");
             break;
         default:
-            header("Location: index.php");
+            header("Location: user/dashboard.php");
     }
     exit();
 }
