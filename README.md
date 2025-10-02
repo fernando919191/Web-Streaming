@@ -1,11 +1,11 @@
 # Web-Streaming
-# 🎬 StreamMarket - Mercado de Cuentas de Streaming
+# 🎬Fluxa - Mercado de Cuentas de Streaming
 
 [![Estado](https://img.shields.io/badge/Estado-Desarrollo_Activo-brightgreen)](https://github.com/tuusuario/streammarket)
 [![Licencia](https://img.shields.io/badge/Licencia-MIT-blue)](https://opensource.org/licenses/MIT)
 [![Versión](https://img.shields.io/badge/Versión-1.0.0-orange)](https://github.com/tuusuario/streammarket/releases)
 
-**StreamMarket** es una plataforma segura y confiable donde vendedores y compradores pueden intercambiar cuentas de streaming de manera transparente y protegida.
+**Fluxa** es una plataforma segura y confiable donde vendedores y compradores pueden intercambiar cuentas de streaming de manera transparente y protegida.
 
 ## ✨ Características Principales
 
@@ -27,26 +27,7 @@
 - **Sistema de Disponibilidad** en tiempo real
 - **Gestión de Inventario** para vendedores
 
-## 🚀 Tecnologías Utilizadas
 
-### Frontend
-- **React.js** - Framework principal
-- **Tailwind CSS** - Estilos y diseño responsive
-- **TypeScript** - Tipado estático
-- **React Query** - Gestión de estado del servidor
-
-### Backend
-- **Node.js** - Runtime de JavaScript
-- **Express.js** - Framework web
-- **MongoDB** - Base de datos
-- **JWT** - Autenticación
-- **Socket.io** - Comunicación en tiempo real
-
-### Seguridad
-- **bcrypt** - Encriptación de contraseñas
-- **Helmet.js** - Seguridad HTTP
-- **CORS** - Control de acceso
-- **Rate Limiting** - Prevención de abuso
 
 ## 📦 Instalación y Configuración
 
