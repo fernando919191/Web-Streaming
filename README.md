@@ -1,44 +1,43 @@
-# Web-Streaming
-# 🎬Fluxa - Mercado de Cuentas de Streaming
+# 💰 StreamCoins - Marketplace de Cuentas con Sistema de Coins
 
-[![Estado](https://img.shields.io/badge/Estado-Desarrollo_Activo-brightgreen)](https://github.com/tuusuario/streammarket)
-[![Licencia](https://img.shields.io/badge/Licencia-MIT-blue)](https://opensource.org/licenses/MIT)
-[![Versión](https://img.shields.io/badge/Versión-1.0.0-orange)](https://github.com/tuusuario/streammarket/releases)
+[![Estado](https://img.shields.io/badge/Estado-Desarrollo_Activo-brightgreen)]()
+[![Licencia](https://img.shields.io/badge/Licencia-MIT-blue)]()
+[![Versión](https://img.shields.io/badge/Versión-1.0.0-orange)]()
 
-**Fluxa** es una plataforma segura y confiable donde vendedores y compradores pueden intercambiar cuentas de streaming de manera transparente y protegida.
+**StreamCoins** es un marketplace especializado donde vendedores ofrecen cuentas de streaming usando un sistema unificado de coins. Los usuarios compran coins mediante transferencias y los canjean en cualquier tienda del marketplace.
 
-## ✨ Características Principales
+## 🎯 Funcionalidades Principales
 
-### 🛡️ Seguridad y Confianza
-- **Sistema de Verificación** de vendedores y compuidores
-- **Sistema de Calificaciones y Reseñas** para ambos usuarios
-- **Protección Anti-Fraude** con moderación activa
-- **Transacciones Seguras** con diferentes métodos de pago
+### 👥 Sistema de Usuarios
+- **Registro y Login** para vendedores y compradores
+- **Panel de Vendedor** para gestionar productos y ver estadísticas
+- **Perfil de Usuario** con historial de transacciones
+- **Roles**: Administrador, Vendedor, Comprador
 
-### 🎯 Experiencia de Usuario
-- **Interfaz Intuitiva** y fácil de usar
-- **Búsqueda Avanzada** por plataforma, precio y ubicación
-- **Chat Integrado** para comunicación directa
-- **Sistema de Notificaciones** en tiempo real
+### 🏪 Sistema de Tiendas
+- **Panel de Vendedor** personalizado para cada usuario
+- **Gestión de Productos** (crear, editar, eliminar, pausar)
+- **Categorización** por tipo de streaming (Netflix, Spotify, etc.)
+- **Control de Inventario** y disponibilidad
 
-### 📊 Gestión de Cuentas
-- **Categorías Organizadas** (Netflix, Disney+, HBO Max, Spotify, etc.)
-- **Información Detallada** de cada cuenta (tiempo restante, perfiles disponibles, etc.)
-- **Sistema de Disponibilidad** en tiempo real
-- **Gestión de Inventario** para vendedores
+### 💰 Sistema de Coins
+- **Moneda Unificada** para todo el marketplace
+- **Compra de Coins** mediante transferencias bancarias
+- **Administración de Coins** por parte de los administradores
+- **Historial de Transacciones** completo
 
+### 🛒 Proceso de Compra
+1. **Comprador adquiere coins** mediante transferencia
+2. **Administrador verifica pago** y libera coins
+3. **Comprador canjea coins** por productos
+4. **Vendedor recibe coins** en su balance
 
+### 📊 Sistema de Reportes y Pagos
+- **Reportes de Ventas** por vendedor y período
+- **Cálculo automático** de comisiones y ganancias
+- **Pagos periódicos** a vendedores (quincenal/mensual)
+- **Estado de cuentas** y balances en tiempo real
 
-## 📦 Instalación y Configuración
+## 🏗️ Arquitectura del Sistema
 
-### Prerrequisitos
-- Node.js 16+ 
-- MongoDB 4.4+
-- npm o yarn
-
-### Pasos de Instalación
-
-1. **Clonar el repositorio**
-   ```bash
-   git clone https://github.com/tuusuario/streammarket.git
-   cd streammarket
+### Diagrama de Flujo
