@@ -14,8 +14,7 @@ if (isset($_SESSION['user_id'])) {
         case 'user':
             header("Location: user/dashboard.php");
             break;
-        default:
-            header("Location: index.php");
+        ;
     }
     exit();
 }
