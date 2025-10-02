@@ -8,7 +8,7 @@ $db = $database->getConnection();
 
 $user_id = $_SESSION['user_id'];
 
-// Obtener datos del usuario
+// Obtener datos del usuario con balance actualizado
 $stmt = $db->prepare("
     SELECT u.*, w.balance, w.pending_balance 
     FROM users u 
@@ -17,6 +17,22 @@ $stmt = $db->prepare("
 ");
 $stmt->execute([$user_id]);
 $user_data = $stmt->fetch(PDO::FETCH_ASSOC);
+
+// Obtener transacciones recientes (incluyendo las recién aprobadas)
+$stmt = $db->prepare("
+    SELECT * FROM transactions 
+    WHERE user_id = ? 
+    ORDER BY created_at DESC 
+    LIMIT 5
+");
+$stmt->execute([$user_id]);
+$recent_transactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Verificar si hay transacciones recién aprobadas para mostrar notificación
+$new_approved = array_filter($recent_transactions, function($transaction) {
+    return $transaction['status'] == 'completed' && 
+           strtotime($transaction['updated_at']) > (time() - 3600); // Última hora
+});
 
 // Obtener órdenes recientes del usuario
 $stmt = $db->prepare("
@@ -29,16 +45,6 @@ $stmt = $db->prepare("
 ");
 $stmt->execute([$user_id]);
 $recent_orders = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-// Obtener transacciones recientes
-$stmt = $db->prepare("
-    SELECT * FROM transactions 
-    WHERE user_id = ? 
-    ORDER BY created_at DESC 
-    LIMIT 5
-");
-$stmt->execute([$user_id]);
-$recent_transactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <!DOCTYPE html>
@@ -63,6 +69,14 @@ $recent_transactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
         .wallet-card {
             background: linear-gradient(45deg, #28a745, #20c997);
             color: white;
+        }
+        .balance-update {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
         }
     </style>
 </head>
@@ -95,6 +109,11 @@ $recent_transactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link" href="stores.php">
+                                <i class="fas fa-store me-2"></i>Tiendas
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link" href="orders.php">
                                 <i class="fas fa-shopping-cart me-2"></i>Mis Compras
                             </a>
@@ -102,11 +121,6 @@ $recent_transactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         <li class="nav-item">
                             <a class="nav-link" href="transactions.php">
                                 <i class="fas fa-exchange-alt me-2"></i>Transacciones
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="profile.php">
-                                <i class="fas fa-user me-2"></i>Mi Perfil
                             </a>
                         </li>
                         <li class="nav-item mt-4">
@@ -123,15 +137,28 @@ $recent_transactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 <h1>Mi Dashboard</h1>
                 <p class="text-muted">Bienvenido de vuelta, <?php echo $user_data['username']; ?></p>
 
+                <!-- Notificación de coins aprobados -->
+                <?php if (count($new_approved) > 0): ?>
+                    <div class="alert alert-success alert-dismissible fade show">
+                        <i class="fas fa-check-circle me-2"></i>
+                        <strong>¡Coins Acreditados!</strong> 
+                        Tu compra de coins ha sido aprobada y ya están disponibles en tu balance.
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <?php endif; ?>
+
                 <!-- Wallet y Balance -->
                 <div class="row mb-4">
                     <div class="col-md-6">
-                        <div class="card wallet-card">
+                        <div class="card wallet-card balance-update" id="balanceCard">
                             <div class="card-body">
                                 <div class="d-flex justify-content-between align-items-center">
                                     <div>
-                                        <h4>$<?php echo number_format($user_data['balance'], 2); ?></h4>
+                                        <h4 id="currentBalance">$<?php echo number_format($user_data['balance'], 2); ?></h4>
                                         <p class="mb-0">Balance Disponible</p>
+                                        <small id="balanceTimestamp">
+                                            Actualizado: <?php echo date('H:i:s'); ?>
+                                        </small>
                                     </div>
                                     <div>
                                         <i class="fas fa-wallet fa-3x"></i>
@@ -143,16 +170,86 @@ $recent_transactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     <div class="col-md-6">
                         <div class="card bg-light">
                             <div class="card-body text-center">
-                                <a href="buy_coins.php" class="btn btn-primary btn-lg w-100">
+                                <a href="buy_coins.php" class="btn btn-primary btn-lg w-100 mb-2">
                                     <i class="fas fa-plus-circle me-2"></i>Comprar Más Coins
                                 </a>
-                                <small class="text-muted">1 Coin = $1.00 USD</small>
+                                <a href="stores.php" class="btn btn-success btn-lg w-100">
+                                    <i class="fas fa-store me-2"></i>Ir de Compras
+                                </a>
+                                <small class="text-muted d-block mt-2">1 Coin = $1.00 USD</small>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 <div class="row">
+                    <!-- Transacciones Recientes -->
+                    <div class="col-md-6 mb-4">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h5 class="card-title mb-0">
+                                    <i class="fas fa-exchange-alt me-2"></i>Transacciones Recientes
+                                </h5>
+                                <button class="btn btn-sm btn-outline-primary" onclick="refreshBalance()">
+                                    <i class="fas fa-sync-alt"></i>
+                                </button>
+                            </div>
+                            <div class="card-body">
+                                <?php if (count($recent_transactions) > 0): ?>
+                                    <div class="list-group list-group-flush">
+                                        <?php foreach ($recent_transactions as $transaction): ?>
+                                            <div class="list-group-item">
+                                                <div class="d-flex justify-content-between align-items-start">
+                                                    <div>
+                                                        <strong>
+                                                            <?php echo ucfirst($transaction['type']); ?> - 
+                                                            $<?php echo number_format($transaction['amount'], 2); ?>
+                                                        </strong>
+                                                        <br>
+                                                        <small class="text-muted">
+                                                            <?php echo $transaction['description']; ?>
+                                                        </small>
+                                                        <br>
+                                                        <small>
+                                                            <?php echo date('d/m/Y H:i', strtotime($transaction['created_at'])); ?>
+                                                        </small>
+                                                    </div>
+                                                    <div class="text-end">
+                                                        <span class="badge bg-<?php 
+                                                            switch($transaction['status']) {
+                                                                case 'completed': echo 'success'; break;
+                                                                case 'pending': echo 'warning'; break;
+                                                                case 'rejected': echo 'danger'; break;
+                                                                default: echo 'secondary';
+                                                            }
+                                                        ?>">
+                                                            <?php echo ucfirst($transaction['status']); ?>
+                                                        </span>
+                                                        <?php if ($transaction['status'] == 'completed'): ?>
+                                                            <br>
+                                                            <small class="text-success">
+                                                                <i class="fas fa-check me-1"></i>Acreditado
+                                                            </small>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                    <div class="text-center mt-3">
+                                        <a href="transactions.php" class="btn btn-outline-primary btn-sm">Ver Todas</a>
+                                    </div>
+                                <?php else: ?>
+                                    <div class="text-center py-4">
+                                        <i class="fas fa-exchange-alt fa-3x text-muted mb-3"></i>
+                                        <p class="text-muted">No hay transacciones recientes</p>
+                                        <a href="buy_coins.php" class="btn btn-primary">Comprar Coins</a>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Órdenes Recientes -->
                     <div class="col-md-6 mb-4">
                         <div class="card">
@@ -197,57 +294,7 @@ $recent_transactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                     <div class="text-center py-4">
                                         <i class="fas fa-shopping-cart fa-3x text-muted mb-3"></i>
                                         <p class="text-muted">No has realizado compras aún</p>
-                                        <a href="../index.php" class="btn btn-primary">Explorar Tiendas</a>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Transacciones Recientes -->
-                    <div class="col-md-6 mb-4">
-                        <div class="card">
-                            <div class="card-header">
-                                <h5 class="card-title mb-0">
-                                    <i class="fas fa-exchange-alt me-2"></i>Transacciones Recientes
-                                </h5>
-                            </div>
-                            <div class="card-body">
-                                <?php if (count($recent_transactions) > 0): ?>
-                                    <div class="list-group list-group-flush">
-                                        <?php foreach ($recent_transactions as $transaction): ?>
-                                            <div class="list-group-item">
-                                                <div class="d-flex justify-content-between">
-                                                    <div>
-                                                        <strong><?php echo ucfirst($transaction['type']); ?></strong>
-                                                        <br>
-                                                        <small><?php echo $transaction['description']; ?></small>
-                                                    </div>
-                                                    <div class="text-end">
-                                                        <strong class="<?php echo $transaction['type'] == 'purchase' ? 'text-success' : 'text-danger'; ?>">
-                                                            <?php echo $transaction['type'] == 'purchase' ? '+' : '-'; ?>
-                                                            $<?php echo number_format($transaction['amount'], 2); ?>
-                                                        </strong>
-                                                        <br>
-                                                        <span class="badge bg-<?php 
-                                                            switch($transaction['status']) {
-                                                                case 'completed': echo 'success'; break;
-                                                                case 'pending': echo 'warning'; break;
-                                                                case 'cancelled': echo 'danger'; break;
-                                                                default: echo 'secondary';
-                                                            }
-                                                        ?>">
-                                                            <?php echo ucfirst($transaction['status']); ?>
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                <?php else: ?>
-                                    <div class="text-center py-4">
-                                        <i class="fas fa-exchange-alt fa-3x text-muted mb-3"></i>
-                                        <p class="text-muted">No hay transacciones recientes</p>
+                                        <a href="stores.php" class="btn btn-primary">Explorar Tiendas</a>
                                     </div>
                                 <?php endif; ?>
                             </div>
@@ -266,26 +313,38 @@ $recent_transactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             </div>
                             <div class="card-body">
                                 <div class="row">
-                                    <div class="col-md-3 text-center mb-3">
-                                        <a href="../index.php" class="btn btn-outline-primary w-100 py-3">
+                                    <div class="col-md-2 text-center mb-3">
+                                        <a href="stores.php" class="btn btn-outline-primary w-100 py-3">
                                             <i class="fas fa-store fa-2x mb-2"></i><br>
                                             Explorar Tiendas
                                         </a>
                                     </div>
-                                    <div class="col-md-3 text-center mb-3">
+                                    <div class="col-md-2 text-center mb-3">
                                         <a href="buy_coins.php" class="btn btn-outline-success w-100 py-3">
                                             <i class="fas fa-coins fa-2x mb-2"></i><br>
                                             Comprar Coins
                                         </a>
                                     </div>
-                                    <div class="col-md-3 text-center mb-3">
+                                    <div class="col-md-2 text-center mb-3">
                                         <a href="orders.php" class="btn btn-outline-info w-100 py-3">
                                             <i class="fas fa-history fa-2x mb-2"></i><br>
                                             Historial Compras
                                         </a>
                                     </div>
-                                    <div class="col-md-3 text-center mb-3">
-                                        <a href="profile.php" class="btn btn-outline-warning w-100 py-3">
+                                    <div class="col-md-2 text-center mb-3">
+                                        <a href="transactions.php" class="btn btn-outline-warning w-100 py-3">
+                                            <i class="fas fa-exchange-alt fa-2x mb-2"></i><br>
+                                            Transacciones
+                                        </a>
+                                    </div>
+                                    <div class="col-md-2 text-center mb-3">
+                                        <button class="btn btn-outline-secondary w-100 py-3" onclick="refreshBalance()">
+                                            <i class="fas fa-sync-alt fa-2x mb-2"></i><br>
+                                            Actualizar
+                                        </button>
+                                    </div>
+                                    <div class="col-md-2 text-center mb-3">
+                                        <a href="profile.php" class="btn btn-outline-dark w-100 py-3">
                                             <i class="fas fa-cog fa-2x mb-2"></i><br>
                                             Mi Perfil
                                         </a>
@@ -300,5 +359,89 @@ $recent_transactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        // Función para actualizar el balance
+        function refreshBalance() {
+            const balanceCard = document.getElementById('balanceCard');
+            const currentBalance = document.getElementById('currentBalance');
+            const balanceTimestamp = document.getElementById('balanceTimestamp');
+            
+            // Mostrar loading
+            balanceCard.classList.add('balance-update');
+            currentBalance.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Actualizando...';
+            
+            // Hacer petición AJAX para obtener balance actualizado
+            fetch('get_balance.php')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Actualizar balance
+                        currentBalance.textContent = '$' + parseFloat(data.balance).toFixed(2);
+                        balanceTimestamp.textContent = 'Actualizado: ' + new Date().toLocaleTimeString();
+                        
+                        // Efecto visual de actualización
+                        balanceCard.style.background = 'linear-gradient(45deg, #28a745, #20c997)';
+                        setTimeout(() => {
+                            balanceCard.style.background = '';
+                        }, 1000);
+                        
+                        // Mostrar notificación si hay cambio
+                        if (data.previous_balance !== null && data.balance > data.previous_balance) {
+                            showBalanceNotification(data.balance - data.previous_balance);
+                        }
+                    } else {
+                        currentBalance.textContent = 'Error';
+                        balanceTimestamp.textContent = 'Error al actualizar';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    currentBalance.textContent = '$<?php echo number_format($user_data['balance'], 2); ?>';
+                    balanceTimestamp.textContent = 'Error al actualizar';
+                })
+                .finally(() => {
+                    balanceCard.classList.remove('balance-update');
+                });
+        }
+
+        // Función para mostrar notificación de nuevo balance
+        function showBalanceNotification(amount) {
+            const notification = document.createElement('div');
+            notification.className = 'alert alert-success alert-dismissible fade show mt-3';
+            notification.innerHTML = `
+                <i class="fas fa-coins me-2"></i>
+                <strong>¡Nuevos Coins Acreditados!</strong> 
+                Se han agregado $${amount.toFixed(2)} coins a tu balance.
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.querySelector('main').insertBefore(notification, document.querySelector('main').firstChild);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, 5000);
+        }
+
+        // Actualizar balance automáticamente cada 30 segundos
+        setInterval(refreshBalance, 30000);
+
+        // Actualizar al hacer foco en la ventana
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                refreshBalance();
+            }
+        });
+
+        // Mostrar tooltip de actualización
+        document.addEventListener('DOMContentLoaded', function() {
+            const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            const tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+        });
+    </script>
 </body>
 </html>
