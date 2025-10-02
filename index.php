@@ -99,7 +99,7 @@
                 <i class="fas fa-play-circle me-2"></i>Fluxa
             </a>
             <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="#"><i class="fas fa-sign-in-alt me-1"></i> Iniciar Sesión</a>
+                <a class="nav-link" href="login.php"><i class="fas fa-sign-in-alt me-1"></i> Iniciar Sesión</a>
                 <a class="nav-link" href="#"><i class="fas fa-user-plus me-1"></i> Registrarse</a>
             </div>
         </div>
