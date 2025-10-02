@@ -13,6 +13,7 @@ if (isset($_SESSION['user_id'])) {
             break;
         case 'user':
             header("Location: user/dashboard.php");
+            break;
         default:
             header("Location: index.php");
     }
