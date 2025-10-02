@@ -47,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $_SESSION['user_role'] = $user['role'];
             $_SESSION['store_name'] = $user['store_name'];
             
-            // Redirigir según el rol
+            // Redirigir según el rol - ¡CORREGIDO!
             switch ($user['role']) {
                 case 'admin':
                     header("Location: admin/dashboard.php");
@@ -55,9 +55,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 case 'vendor':
                     header("Location: vendor/dashboard.php");
                     break;
-               case 'user':
-            header("Location: user/dashboard.php");
-            break;
+                case 'user': // ✅ AGREGADO ESTE CASO
+                    header("Location: user/dashboard.php");
+                    break;
+                default:
+                    header("Location: index.php");
             }
             exit();
             
