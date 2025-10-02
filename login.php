@@ -47,21 +47,19 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $_SESSION['user_role'] = $user['role'];
             $_SESSION['store_name'] = $user['store_name'];
             
-            if (isset($_SESSION['user_id'])) {
-    switch ($_SESSION['user_role']) {
-        case 'admin':
-            header("Location: admin/dashboard.php");
-            break;
-        case 'vendor':
-            header("Location: vendor/dashboard.php");
-            break;
-        case 'user':
+            // Redirigir según el rol
+            switch ($user['role']) {
+                case 'admin':
+                    header("Location: admin/dashboard.php");
+                    break;
+                case 'vendor':
+                    header("Location: vendor/dashboard.php");
+                    break;
+               case 'user':
             header("Location: user/dashboard.php");
             break;
-        default:
-            header("Location: index.php");
-    }
-    exit();
+            }
+            exit();
             
         } else {
             $error = 'Email o contraseña incorrectos.';
