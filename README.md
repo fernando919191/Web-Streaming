@@ -1,10 +1,10 @@
-# 💰 StreamCoins - Marketplace de Cuentas con Sistema de Coins
+# 💰 Fluxa - Marketplace de Cuentas con Sistema de Coins
 
 [![Estado](https://img.shields.io/badge/Estado-Desarrollo_Activo-brightgreen)]()
 [![Licencia](https://img.shields.io/badge/Licencia-MIT-blue)]()
 [![Versión](https://img.shields.io/badge/Versión-1.0.0-orange)]()
 
-**StreamCoins** es un marketplace especializado donde vendedores ofrecen cuentas de streaming usando un sistema unificado de coins. Los usuarios compran coins mediante transferencias y los canjean en cualquier tienda del marketplace.
+**Fluxa** es un marketplace especializado donde vendedores ofrecen cuentas de streaming usando un sistema unificado de coins. Los usuarios compran coins mediante transferencias y los canjean en cualquier tienda del marketplace.
 
 ## 🎯 Funcionalidades Principales
 
