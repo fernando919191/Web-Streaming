@@ -6,7 +6,7 @@
 
 // Configuración de la base de datos CON TUS CREDENCIALES
 $config = [
-    'host' => 'localhost:8443',
+    'host' => 'localhost:3306',
     'dbname' => 'fluxa_marketplace',
     'username' => 'fluxer_user',
     'password' => '44m9j%L9w3',

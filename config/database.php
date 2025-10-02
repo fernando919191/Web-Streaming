@@ -1,6 +1,6 @@
 <?php
 class Database {
-    private $host = "localhost:8443";
+    private $host = "localhost:3306";
     private $db_name = "fluxa_marketplace";
     private $username = "fluxer_user";
     private $password = "44m9j%L9w3";
