@@ -1,9 +1,9 @@
 <?php
 class Database {
-    private $host = "localhost";
+    private $host = "localhost:8443";
     private $db_name = "fluxa_marketplace";
-    private $username = "root";
-    private $password = "";
+    private $username = "fluxer_user";
+    private $password = "44m9j%L9w3";
     public $conn;
 
     public function getConnection() {
