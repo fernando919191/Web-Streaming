@@ -8,12 +8,21 @@ $db = $database->getConnection();
 
 $user_id = $_SESSION['user_id'];
 
-// Obtener balance actual
+// Obtener balance actual DESDE WALLETS
 $stmt = $db->prepare("
-    SELECT balance FROM wallets WHERE user_id = ?
+    SELECT COALESCE(balance, 0) as balance 
+    FROM wallets 
+    WHERE user_id = ?
 ");
 $stmt->execute([$user_id]);
 $current_balance = $stmt->fetchColumn();
+
+// Si no existe el wallet, crearlo
+if ($current_balance === false) {
+    $stmt = $db->prepare("INSERT INTO wallets (user_id, balance) VALUES (?, 0.00)");
+    $stmt->execute([$user_id]);
+    $current_balance = 0.00;
+}
 
 // Enviar respuesta JSON
 header('Content-Type: application/json');
