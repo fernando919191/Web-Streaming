@@ -9,8 +9,8 @@ session_start();
 // ===================== CONFIG / DEPENDENCIAS =====================
 // Conexión a base de datos
 $DB_CONNECTED = false;
-if (file_exists(__DIR__ . '/../config/db.php')) {
-    require_once __DIR__ . '/../config/db.php';
+if (file_exists(__DIR__ . '/../config/database.php')) {
+    require_once __DIR__ . '/../config/database.php';
     // Compatibilidad con $mysqli o $conn
     if (isset($mysqli) && $mysqli instanceof mysqli) {
         $db = $mysqli;
