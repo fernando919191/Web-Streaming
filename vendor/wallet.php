@@ -1,34 +1,29 @@
 <?php
 // vendor/wallet.php
 // Panel de billetera para VENDEDOR: saldo, historial y solicitudes de recarga/retiro
-// Requisitos: PHP 8.0+, extensión mysqli, Bootstrap 5 (opcional para estilos)
-// Depende de: config/db.php que debe exponer $mysqli (objeto mysqli) o $conn
 
 session_start();
 
 // ===================== CONFIG / DEPENDENCIAS =====================
-// Conexión a base de datos
-$DB_CONNECTED = false;
-if (file_exists(__DIR__ . '../config/database.php')) {
-    require_once __DIR__ . '../config/database.php';
-    // Compatibilidad con $mysqli o $conn
-    if (isset($mysqli) && $mysqli instanceof mysqli) {
-        $db = $mysqli;
-        $DB_CONNECTED = true;
-    } elseif (isset($conn) && $conn instanceof mysqli) {
-        $db = $conn;
-        $DB_CONNECTED = true;
-    }
+require_once '../config/auth.php';
+require_once '../config/database.php';
+
+// Asegúrate de que en database.php se exponga $mysqli o $conn como instancia de mysqli
+$db = null;
+if (isset($mysqli) && $mysqli instanceof mysqli) {
+    $db = $mysqli;
+} elseif (isset($conn) && $conn instanceof mysqli) {
+    $db = $conn;
 }
-if (!$DB_CONNECTED) {
+if (!$db) {
     http_response_code(500);
-    echo 'Error: No se pudo conectar a la base de datos. Verifica config/db.php';
+    echo 'Error: No se pudo conectar a la base de datos. Verifica config/database.php';
     exit;
 }
 
 // Seguridad básica: solo VENDEDOR
 $userId = $_SESSION['user_id'] ?? null;
-$userRole = $_SESSION['role'] ?? $_SESSION['tipo'] ?? null; // compat con distintos nombres de rol
+$userRole = $_SESSION['role'] ?? $_SESSION['tipo'] ?? null;
 if (!$userId || !in_array(strtolower((string)$userRole), ['vendedor','seller','ventas'])) {
     header('Location: ../login.php');
     exit;
@@ -49,8 +44,7 @@ function csrf_verify($token) : bool {
 function h($str) { return htmlspecialchars((string)$str, ENT_QUOTES, 'UTF-8'); }
 function now_utc() { return (new DateTime('now', new DateTimeZone('UTC')))->format('Y-m-d H:i:s'); }
 
-// ===================== ESQUEMA (auto-migración ligera) =====================
-// Crea tabla transactions si no existe (si ya la tienes, puedes quitar este bloque)
+// ===================== ESQUEMA =====================
 $db->query("CREATE TABLE IF NOT EXISTS transactions (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
@@ -66,9 +60,8 @@ $db->query("CREATE TABLE IF NOT EXISTS transactions (
   INDEX idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
 
-// ===================== LÓGICA DE NEGOCIO =====================
+// ===================== LÓGICA =====================
 function getApprovedBalance(mysqli $db, int $userId) : float {
-    // Saldo = créditos aprobados - débitos aprobados
     $sql = "SELECT 
                COALESCE(SUM(CASE WHEN type IN ('credit') AND status='approved' THEN amount ELSE 0 END),0)
              - COALESCE(SUM(CASE WHEN type IN ('debit') AND status='approved' THEN amount ELSE 0 END),0) AS balance
@@ -107,7 +100,6 @@ function createTopupRequest(mysqli $db, int $userId, float $amount, ?string $ref
 }
 
 function createWithdrawRequest(mysqli $db, int $userId, float $amount, ?string $notes) : bool {
-    // El retiro se modela como una solicitud; el admin luego registra un 'debit' aprobado si procede
     $now = now_utc();
     $sql = "INSERT INTO transactions (user_id, type, amount, status, notes, created_at, updated_at)
             VALUES (?, 'withdraw_request', ?, 'pending', ?, ?, ?)";
@@ -133,9 +125,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = 'Ingresa un monto válido (> 0).';
             } else {
                 if (createTopupRequest($db, (int)$userId, $amount, $reference ?: null)) {
-                    $success = 'Solicitud de recarga enviada. Quedará en "pending" hasta aprobación del administrador.';
+                    $success = 'Solicitud de recarga enviada.';
                 } else {
-                    $errors[] = 'No se pudo registrar la solicitud. Intenta más tarde.';
+                    $errors[] = 'No se pudo registrar la solicitud.';
                 }
             }
         }
@@ -146,12 +138,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($amount <= 0) {
                 $errors[] = 'Ingresa un monto válido (> 0).';
             } elseif ($amount > $balance) {
-                $errors[] = 'El monto excede tu saldo disponible (' . number_format($balance, 2) . ').';
+                $errors[] = 'El monto excede tu saldo disponible.';
             } else {
                 if (createWithdrawRequest($db, (int)$userId, $amount, $notes ?: null)) {
-                    $success = 'Solicitud de retiro enviada. Quedará en "pending" hasta aprobación del administrador.';
+                    $success = 'Solicitud de retiro enviada.';
                 } else {
-                    $errors[] = 'No se pudo registrar la solicitud de retiro. Intenta más tarde.';
+                    $errors[] = 'No se pudo registrar la solicitud de retiro.';
                 }
             }
         }
@@ -172,21 +164,11 @@ $items = listTransactions($db, (int)$userId, $limit, $offset);
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Billetera del Vendedor</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    body { background: #0f172a; color: #e2e8f0; }
-    .card { background: #111827; border: 1px solid #1f2937; }
-    .form-control, .form-select { background:#0b1220; color:#e2e8f0; border-color:#1f2937; }
-    .form-control:focus { background:#0b1220; color:#fff; border-color:#334155; box-shadow:none; }
-    .table { --bs-table-bg: transparent; }
-    .badge-status { text-transform: uppercase; letter-spacing:.5px; }
-  </style>
 </head>
-<body>
+<body class="bg-dark text-light">
 <div class="container py-4">
-  <div class="d-flex align-items-center mb-4">
-    <h1 class="h3 m-0">Billetera del Vendedor</h1>
-    <span class="ms-auto small text-secondary">Usuario #<?php echo (int)$userId; ?></span>
-  </div>
+  <h1>Billetera del Vendedor</h1>
+  <p>Saldo disponible: <strong><?php echo number_format($balance, 2); ?> coins</strong></p>
 
   <?php if ($errors): ?>
     <div class="alert alert-danger"><?php echo implode('<br>', array_map('h', $errors)); ?></div>
@@ -195,135 +177,67 @@ $items = listTransactions($db, (int)$userId, $limit, $offset);
     <div class="alert alert-success"><?php echo h($success); ?></div>
   <?php endif; ?>
 
-  <div class="row g-4">
-    <div class="col-12 col-lg-4">
-      <div class="card p-3">
-        <div class="d-flex align-items-center justify-content-between">
-          <div>
-            <div class="text-secondary">Saldo disponible</div>
-            <div class="display-6 fw-semibold"><?php echo number_format($balance, 2); ?> <span class="h4">coins</span></div>
-          </div>
-          <div class="text-end">
-            <span class="badge bg-info-subtle text-info border border-info">APROBADO</span>
-          </div>
-        </div>
-        <hr>
-        <p class="small text-secondary m-0">El saldo se calcula con <em>credit</em> aprobados menos <em>debit</em> aprobados. Las solicitudes aparecen como <em>pending</em>.</p>
-      </div>
-    </div>
-
-    <div class="col-12 col-lg-4">
-      <div class="card p-3">
+  <div class="row g-3">
+    <div class="col-md-6">
+      <div class="card p-3 bg-secondary">
         <h2 class="h5">Solicitar recarga</h2>
-        <form method="post" class="mt-2">
+        <form method="post">
           <input type="hidden" name="csrf" value="<?php echo h(csrf_token()); ?>">
           <input type="hidden" name="action" value="topup">
           <div class="mb-2">
-            <label class="form-label">Monto (coins)</label>
+            <label class="form-label">Monto</label>
             <input type="number" step="0.01" min="0" class="form-control" name="amount" required>
           </div>
           <div class="mb-3">
-            <label class="form-label">Referencia (opcional)</label>
-            <input type="text" maxlength="190" class="form-control" name="reference" placeholder="Folio de pago, nota, etc.">
+            <label class="form-label">Referencia</label>
+            <input type="text" class="form-control" name="reference">
           </div>
-          <button class="btn btn-primary w-100">Enviar solicitud</button>
+          <button class="btn btn-primary">Enviar solicitud</button>
         </form>
       </div>
     </div>
-
-    <div class="col-12 col-lg-4">
-      <div class="card p-3">
+    <div class="col-md-6">
+      <div class="card p-3 bg-secondary">
         <h2 class="h5">Solicitar retiro</h2>
-        <form method="post" class="mt-2">
+        <form method="post">
           <input type="hidden" name="csrf" value="<?php echo h(csrf_token()); ?>">
           <input type="hidden" name="action" value="withdraw">
           <div class="mb-2">
-            <label class="form-label">Monto (coins)</label>
+            <label class="form-label">Monto</label>
             <input type="number" step="0.01" min="0" class="form-control" name="amount" required>
           </div>
           <div class="mb-3">
-            <label class="form-label">Notas (opcional)</label>
-            <input type="text" maxlength="190" class="form-control" name="notes" placeholder="CLABE, wallet USDT, o nota para el admin">
+            <label class="form-label">Notas</label>
+            <input type="text" class="form-control" name="notes">
           </div>
-          <button class="btn btn-outline-warning w-100">Enviar solicitud</button>
+          <button class="btn btn-warning">Enviar solicitud</button>
         </form>
       </div>
     </div>
   </div>
 
-  <div class="card mt-4 p-3">
-    <div class="d-flex align-items-center mb-2">
-      <h2 class="h5 m-0">Historial</h2>
-      <span class="ms-auto small text-secondary">Mostrando <?php echo (int)$limit; ?> por página</span>
-    </div>
-    <div class="table-responsive">
-      <table class="table table-sm align-middle text-white">
-        <thead>
-          <tr class="text-secondary">
-            <th>#</th>
-            <th>Tipo</th>
-            <th class="text-end">Monto</th>
-            <th>Estatus</th>
-            <th>Referencia / Notas</th>
-            <th>Fecha</th>
-          </tr>
-        </thead>
-        <tbody>
-        <?php if (!$items): ?>
-          <tr><td colspan="6" class="text-center text-secondary">Sin movimientos aún</td></tr>
-        <?php else: foreach ($items as $row): ?>
-          <tr>
-            <td><?php echo (int)$row['id']; ?></td>
-            <td>
-              <?php 
-                $type = (string)$row['type'];
-                $labels = [
-                  'credit' => 'Crédito',
-                  'debit' => 'Débito',
-                  'topup_request' => 'Solicitud de recarga',
-                  'withdraw_request' => 'Solicitud de retiro'
-                ];
-                echo h($labels[$type] ?? $type);
-              ?>
-            </td>
-            <td class="text-end fw-semibold"><?php echo number_format((float)$row['amount'], 2); ?></td>
-            <td>
-              <?php
-                $status = (string)$row['status'];
-                $class = 'bg-secondary';
-                if ($status==='approved') $class='bg-success';
-                elseif ($status==='pending') $class='bg-warning text-dark';
-                elseif ($status==='rejected') $class='bg-danger';
-              ?>
-              <span class="badge badge-status <?php echo $class; ?>"><?php echo h($status); ?></span>
-            </td>
-            <td class="text-break">
-              <?php
-                $ref = trim((string)($row['reference'] ?? ''));
-                $notes = trim((string)($row['notes'] ?? ''));
-                echo h($ref ?: $notes ?: '—');
-              ?>
-            </td>
-            <td class="text-secondary small"><?php echo h($row['created_at']); ?></td>
-          </tr>
-        <?php endforeach; endif; ?>
-        </tbody>
-      </table>
-    </div>
-    <div class="d-flex gap-2 justify-content-end">
-      <?php if ($page>1): ?>
-        <a class="btn btn-sm btn-outline-light" href="?page=<?php echo $page-1; ?>">« Anterior</a>
-      <?php endif; ?>
-      <?php if (count($items)===$limit): ?>
-        <a class="btn btn-sm btn-outline-light" href="?page=<?php echo $page+1; ?>">Siguiente »</a>
-      <?php endif; ?>
-    </div>
-  </div>
-
-  <p class="mt-4 small text-secondary">
-    <strong>Nota:</strong> Las solicitudes (<em>topup/withdraw</em>) requieren aprobación en el panel de administración. Una vez aprobadas, el admin debe registrar
-    el movimiento aprobado: <em>credit</em> (para recarga) o <em>debit</em> (para retiro/compra), lo cual impactará tu saldo.
-  </p>
+  <h2 class="mt-4">Historial</h2>
+  <table class="table table-dark table-striped">
+    <thead>
+      <tr>
+        <th>ID</th><th>Tipo</th><th>Monto</th><th>Estatus</th><th>Ref/Notas</th><th>Fecha</th>
+      </tr>
+    </thead>
+    <tbody>
+    <?php if (!$items): ?>
+      <tr><td colspan="6">Sin movimientos</td></tr>
+    <?php else: foreach ($items as $row): ?>
+      <tr>
+        <td><?php echo (int)$row['id']; ?></td>
+        <td><?php echo h($row['type']); ?></td>
+        <td><?php echo number_format((float)$row['amount'],2); ?></td>
+        <td><?php echo h($row['status']); ?></td>
+        <td><?php echo h($row['reference'] ?: $row['notes']); ?></td>
+        <td><?php echo h($row['created_at']); ?></td>
+      </tr>
+    <?php endforeach; endif; ?>
+    </tbody>
+  </table>
 </div>
 </body>
 </html>
