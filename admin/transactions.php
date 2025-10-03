@@ -23,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 }
 
-// Función para procesar transacciones
+// Función para procesar transacciones - ¡CORREGIDA!
 function processTransaction($db, $transaction_id, $action, $reason = '') {
     try {
         $db->beginTransaction();
@@ -38,24 +38,35 @@ function processTransaction($db, $transaction_id, $action, $reason = '') {
         }
         
         if ($action == 'approve') {
-            // Aprobar transacción - agregar coins al usuario
-            $stmt = $db->prepare("UPDATE transactions SET status = 'completed', admin_notes = ? WHERE id = ?");
+            // 1. Primero verificar que el usuario tenga wallet
+            $stmt = $db->prepare("SELECT id FROM wallets WHERE user_id = ?");
+            $stmt->execute([$transaction['user_id']]);
+            $wallet = $stmt->fetch();
+            
+            if (!$wallet) {
+                // Si no tiene wallet, crear uno
+                $stmt = $db->prepare("INSERT INTO wallets (user_id, balance) VALUES (?, 0.00)");
+                $stmt->execute([$transaction['user_id']]);
+            }
+            
+            // 2. Aprobar transacción
+            $stmt = $db->prepare("UPDATE transactions SET status = 'completed', admin_notes = ?, updated_at = NOW() WHERE id = ?");
             $stmt->execute(["Aprobado por administrador", $transaction_id]);
             
-            // Actualizar wallet del usuario
-            $stmt = $db->prepare("UPDATE wallets SET balance = balance + ? WHERE user_id = ?");
+            // 3. ✅ ACTUALIZAR WALLET DEL USUARIO - ¡ESTO ES LO MÁS IMPORTANTE!
+            $stmt = $db->prepare("UPDATE wallets SET balance = balance + ?, updated_at = NOW() WHERE user_id = ?");
             $stmt->execute([$transaction['amount'], $transaction['user_id']]);
             
-            // Obtener email del usuario para notificación
-            $stmt = $db->prepare("SELECT email, username FROM users WHERE id = ?");
+            // 4. Obtener información para el mensaje
+            $stmt = $db->prepare("SELECT username, email FROM users WHERE id = ?");
             $stmt->execute([$transaction['user_id']]);
             $user = $stmt->fetch(PDO::FETCH_ASSOC);
             
-            $success_message = "✅ Transacción #$transaction_id aprobada. $transaction[amount] coins agregados a $user[username].";
+            $success_message = "✅ Transacción #$transaction_id aprobada. {$transaction['amount']} coins agregados a {$user['username']}.";
             
         } elseif ($action == 'reject') {
             // Rechazar transacción
-            $stmt = $db->prepare("UPDATE transactions SET status = 'rejected', admin_notes = ? WHERE id = ?");
+            $stmt = $db->prepare("UPDATE transactions SET status = 'rejected', admin_notes = ?, updated_at = NOW() WHERE id = ?");
             $stmt->execute(["Rechazado: " . $reason, $transaction_id]);
             
             $success_message = "❌ Transacción #$transaction_id rechazada.";
@@ -104,9 +115,10 @@ $where_sql = implode(" AND ", $where_conditions);
 // Obtener transacciones
 $stmt = $db->prepare("
     SELECT t.*, u.username, u.email, u.role,
-           (SELECT balance FROM wallets WHERE user_id = u.id) as user_balance
+           COALESCE(w.balance, 0) as user_balance
     FROM transactions t 
     JOIN users u ON t.user_id = u.id 
+    LEFT JOIN wallets w ON u.id = w.user_id 
     WHERE $where_sql
     ORDER BY t.created_at DESC
 ");
@@ -156,6 +168,10 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
         .status-badge {
             font-size: 0.75rem;
             padding: 0.35em 0.65em;
+        }
+        .balance-badge {
+            background: linear-gradient(45deg, #28a745, #20c997);
+            color: white;
         }
     </style>
 </head>
@@ -341,6 +357,7 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
                                             <th>Usuario</th>
                                             <th>Tipo</th>
                                             <th>Monto</th>
+                                            <th>Balance</th>
                                             <th>Referencia</th>
                                             <th>Estado</th>
                                             <th>Fecha</th>
@@ -363,10 +380,6 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
                                                         <?php endif; ?>
                                                         <br>
                                                         <small class="text-muted"><?php echo $transaction['email']; ?></small>
-                                                        <br>
-                                                        <small class="text-info">
-                                                            Balance: $<?php echo number_format($transaction['user_balance'], 2); ?>
-                                                        </small>
                                                     </div>
                                                 </td>
                                                 <td>
@@ -376,6 +389,11 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
                                                 </td>
                                                 <td>
                                                     <strong class="text-success">$<?php echo number_format($transaction['amount'], 2); ?></strong>
+                                                </td>
+                                                <td>
+                                                    <span class="badge balance-badge">
+                                                        $<?php echo number_format($transaction['user_balance'], 2); ?>
+                                                    </span>
                                                 </td>
                                                 <td>
                                                     <small><?php echo $transaction['reference'] ?: 'N/A'; ?></small>
@@ -411,7 +429,7 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
                                                                 <input type="hidden" name="transaction_id" value="<?php echo $transaction['id']; ?>">
                                                                 <button type="submit" name="approve_transaction" 
                                                                         class="btn btn-success" 
-                                                                        onclick="return confirm('¿Aprobar transacción #<?php echo $transaction['id']; ?>?')">
+                                                                        onclick="return confirm('¿Aprobar transacción #<?php echo $transaction['id']; ?>? Se agregarán $<?php echo number_format($transaction['amount'], 2); ?> coins al usuario.')">
                                                                     <i class="fas fa-check"></i>
                                                                 </button>
                                                             </form>
@@ -539,7 +557,7 @@ $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
                             <tr><td><strong>Usuario:</strong></td><td>${transaction.username}</td></tr>
                             <tr><td><strong>Email:</strong></td><td>${transaction.email}</td></tr>
                             <tr><td><strong>Rol:</strong></td><td>${transaction.role}</td></tr>
-                            <tr><td><strong>Balance:</strong></td><td>$${parseFloat(transaction.user_balance).toFixed(2)}</td></tr>
+                            <tr><td><strong>Balance Actual:</strong></td><td>$${parseFloat(transaction.user_balance).toFixed(2)}</td></tr>
                         </table>
                     </div>
                     <div class="col-md-6">
