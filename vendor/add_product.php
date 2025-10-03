@@ -13,7 +13,7 @@ $success = '';
 
 // Configuración de imágenes
 $upload_dir = '../images/products/';
-$allowed_types = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+$allowed_types = ['jpg', 'jpeg', 'png', 'gif'];
 $max_size = 5 * 1024 * 1024; // 5MB
 
 // Crear directorio de imágenes si no existe
