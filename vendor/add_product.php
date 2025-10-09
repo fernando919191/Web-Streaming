@@ -13,7 +13,7 @@ $success = '';
 
 // Configuración de imágenes
 $upload_dir = '../images/products/';
-$allowed_types = ['jpg', 'jpeg', 'png', 'gif'];
+$allowed_types = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
 $max_size = 5 * 1024 * 1024; // 5MB
 
 // Crear directorio de imágenes si no existe
@@ -23,71 +23,77 @@ if (!file_exists($upload_dir)) {
     }
 }
 
+// Mapa de imágenes predeterminadas por plataforma (en la misma carpeta $upload_dir)
+$platform_images = [
+    'netflix'   => 'netflix.png',
+    'disney'    => 'disney.png',
+    'hbo'       => 'hbo.png',        // HBO Max / Max
+    'spotify'   => 'spotify.png',
+    'youtube'   => 'youtube.png',
+    'amazon'    => 'primevideo.png', // Amazon Prime Video
+    'apple'     => 'appletv.png',    // Apple TV+
+    'paramount' => 'paramount.png',
+    'star'      => 'starplus.png',
+    'other'     => 'generic.png'     // fallback genérico
+];
+
+// Helper: devuelve el arreglo de imagen default para guardar en DB
+function getDefaultImageForPlatform($platform, $upload_dir, $platform_images) {
+    $file = $platform_images[$platform] ?? $platform_images['other'];
+    $path = rtrim($upload_dir, '/').'/'.$file;
+
+    // Si no existiera el archivo, hacemos fallback al genérico
+    if (!file_exists($path)) {
+        $file = $platform_images['other'];
+        $path = rtrim($upload_dir, '/').'/'.$file;
+    }
+
+    return [[
+        'filename'      => $file,
+        'original_name' => 'auto_'.$platform,
+        'path'          => $path,
+        'is_default'    => true
+    ]];
+}
+
 // Obtener categorías para el select
 $stmt = $db->query("SELECT * FROM categories ORDER BY name");
 $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Procesar el formulario de agregar producto
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])) {
-    $title = trim($_POST['title']);
-    $description = trim($_POST['description']);
-    $price = floatval($_POST['price']);
-    $stock = intval($_POST['stock']);
-    $category_id = intval($_POST['category_id']);
-    $platform = $_POST['platform'];
-    $account_type = $_POST['account_type'];
+    $title         = trim($_POST['title']);
+    $description   = trim($_POST['description']);
+    $price         = floatval($_POST['price']);
+    $stock         = intval($_POST['stock']);
+    $category_id   = intval($_POST['category_id']);
+    $platform      = $_POST['platform'];
+    $account_type  = $_POST['account_type'];
     $duration_days = intval($_POST['duration_days']);
-    $features = $_POST['features'] ?? [];
-    
+
+    // features llega como JSON en el hidden input
+    $features = [];
+    if (!empty($_POST['features'])) {
+        $decoded = json_decode($_POST['features'], true);
+        if (is_array($decoded)) {
+            $features = $decoded;
+        }
+    }
+
     // Validaciones básicas
-    if (empty($title) || empty($description) || $price <= 0 || $stock <= 0) {
+    if (empty($title) || empty($description) || $price <= 0 || $stock <= 0 || empty($platform) || empty($account_type) || $duration_days <= 0 || empty($category_id)) {
         $error = 'Por favor, completa todos los campos obligatorios correctamente.';
     } else {
         try {
             $db->beginTransaction();
-            
-            // Procesar imágenes subidas
-            $uploaded_images = [];
-            
-            if (!empty($_FILES['images']['name'][0])) {
-                foreach ($_FILES['images']['name'] as $key => $name) {
-                    if ($_FILES['images']['error'][$key] === UPLOAD_ERR_OK) {
-                        $file_tmp = $_FILES['images']['tmp_name'][$key];
-                        $file_size = $_FILES['images']['size'][$key];
-                        $file_type = strtolower(pathinfo($name, PATHINFO_EXTENSION));
-                        
-                        // Validar tipo de archivo
-                        if (!in_array($file_type, $allowed_types)) {
-                            throw new Exception("El archivo '$name' no es una imagen válida. Formatos permitidos: " . implode(', ', $allowed_types));
-                        }
-                        
-                        // Validar tamaño
-                        if ($file_size > $max_size) {
-                            throw new Exception("El archivo '$name' es demasiado grande. Máximo 5MB permitido.");
-                        }
-                        
-                        // Generar nombre único
-                        $new_filename = uniqid() . '_' . time() . '.' . $file_type;
-                        $file_path = $upload_dir . $new_filename;
-                        
-                        // Mover archivo
-                        if (move_uploaded_file($file_tmp, $file_path)) {
-                            $uploaded_images[] = [
-                                'filename' => $new_filename,
-                                'original_name' => $name,
-                                'path' => $file_path
-                            ];
-                        } else {
-                            throw new Exception("Error al subir el archivo '$name'.");
-                        }
-                    }
-                }
-            }
-            
+
+            // Asignar imagen predeterminada según plataforma (sin subir archivos)
+            $uploaded_images = getDefaultImageForPlatform($platform, $upload_dir, $platform_images);
+
             // Preparar datos para JSON
             $features_json = json_encode($features);
-            $images_json = json_encode($uploaded_images);
-            
+            $images_json   = json_encode($uploaded_images);
+
             // Insertar producto
             $stmt = $db->prepare("
                 INSERT INTO products 
@@ -108,31 +114,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])) {
                 $features_json,
                 $images_json
             ]);
-            
+
             $product_id = $db->lastInsertId();
             $success = "✅ Producto '$title' agregado exitosamente. ID: #$product_id";
-            
+
             // Limpiar el formulario
             $_POST = [];
-            
+
             $db->commit();
-            
         } catch (Exception $e) {
             $db->rollBack();
-            
-            // Eliminar imágenes subidas en caso de error
-            foreach ($uploaded_images as $image) {
-                if (file_exists($image['path'])) {
-                    unlink($image['path']);
-                }
-            }
-            
             $error = "❌ Error al agregar el producto: " . $e->getMessage();
         }
     }
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -183,54 +179,23 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])) {
         }
         .image-preview {
             position: relative;
-            width: 100px;
-            height: 100px;
+            width: 120px;
+            height: 120px;
             border: 2px dashed #dee2e6;
             border-radius: 8px;
             overflow: hidden;
             display: flex;
             align-items: center;
             justify-content: center;
+            background: #fff;
         }
         .image-preview img {
             max-width: 100%;
             max-height: 100%;
-            object-fit: cover;
+            object-fit: contain;
+            padding: 6px;
         }
-        .remove-image {
-            position: absolute;
-            top: 5px;
-            right: 5px;
-            background: rgba(220, 53, 69, 0.8);
-            color: white;
-            border: none;
-            border-radius: 50%;
-            width: 24px;
-            height: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            font-size: 12px;
-        }
-        .upload-area {
-            border: 2px dashed #007bff;
-            border-radius: 8px;
-            padding: 20px;
-            text-align: center;
-            background: #f8f9fa;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-        .upload-area:hover {
-            background: #e9ecef;
-            border-color: #0056b3;
-        }
-        .upload-area.dragover {
-            background: #007bff;
-            border-color: #0056b3;
-            color: white;
-        }
+        .upload-area { display:none; } /* Oculto: no se suben imágenes */
     </style>
 </head>
 <body>
@@ -245,8 +210,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])) {
                         <div class="mt-3">
                             <img src="<?php echo $_SESSION['avatar'] ?: 'https://ui-avatars.com/api/?name=' . urlencode($_SESSION['username']) . '&background=6f42c1&color=ffffff'; ?>" 
                                  class="rounded-circle" width="80" height="80" style="border: 3px solid white;">
-                            <h6 class="mt-2"><?php echo $_SESSION['username']; ?></h6>
-                            <small><?php echo $_SESSION['email']; ?></small>
+                            <h6 class="mt-2"><?php echo htmlspecialchars($_SESSION['username']); ?></h6>
+                            <small><?php echo htmlspecialchars($_SESSION['email']); ?></small>
                         </div>
                     </div>
                     
@@ -331,7 +296,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])) {
                                     <div class="mb-3">
                                         <label class="form-label fw-bold">Título del Producto *</label>
                                         <input type="text" class="form-control form-control-lg" name="title" 
-                                               value="<?php echo $_POST['title'] ?? ''; ?>" 
+                                               value="<?php echo isset($_POST['title']) ? htmlspecialchars($_POST['title']) : ''; ?>" 
                                                placeholder="Ej: Netflix Premium 4K UHD" required>
                                         <div class="form-text">Un título claro y descriptivo para tu producto.</div>
                                     </div>
@@ -342,7 +307,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])) {
                                         <div class="input-group">
                                             <span class="input-group-text">$</span>
                                             <input type="number" class="form-control" name="price" 
-                                                   value="<?php echo $_POST['price'] ?? ''; ?>" 
+                                                   value="<?php echo isset($_POST['price']) ? htmlspecialchars($_POST['price']) : ''; ?>" 
                                                    min="1" step="0.01" placeholder="50.00" required>
                                         </div>
                                         <div class="form-text">Precio en coins (1 Coin = $1.00 USD)</div>
@@ -358,8 +323,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])) {
                                             <option value="">Seleccionar categoría</option>
                                             <?php foreach ($categories as $category): ?>
                                                 <option value="<?php echo $category['id']; ?>" 
-                                                    <?php echo ($_POST['category_id'] ?? '') == $category['id'] ? 'selected' : ''; ?>>
-                                                    <?php echo $category['name']; ?>
+                                                    <?php echo (($_POST['category_id'] ?? '') == $category['id']) ? 'selected' : ''; ?>>
+                                                    <?php echo htmlspecialchars($category['name']); ?>
                                                 </option>
                                             <?php endforeach; ?>
                                         </select>
@@ -369,7 +334,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])) {
                                     <div class="mb-3">
                                         <label class="form-label fw-bold">Stock Disponible *</label>
                                         <input type="number" class="form-control" name="stock" 
-                                               value="<?php echo $_POST['stock'] ?? '1'; ?>" 
+                                               value="<?php echo isset($_POST['stock']) ? htmlspecialchars($_POST['stock']) : '1'; ?>" 
                                                min="1" max="100" required>
                                         <div class="form-text">Número de cuentas disponibles para este producto.</div>
                                     </div>
@@ -381,23 +346,25 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])) {
                                 <label class="form-label fw-bold">Descripción del Producto *</label>
                                 <textarea class="form-control" name="description" rows="4" 
                                           placeholder="Describe detalladamente tu producto, incluyendo características, beneficios y cualquier información relevante para el comprador..."
-                                          required><?php echo $_POST['description'] ?? ''; ?></textarea>
+                                          required><?php echo isset($_POST['description']) ? htmlspecialchars($_POST['description']) : ''; ?></textarea>
                                 <div class="form-text">Sé claro y detallado para generar confianza en los compradores.</div>
                             </div>
 
-                            <!-- Subida de Imágenes -->
+                            <!-- Imágenes (asignación automática) -->
                             <div class="mb-4">
                                 <label class="form-label fw-bold">Imágenes del Producto</label>
-                                <div class="upload-area" id="uploadArea">
-                                    <i class="fas fa-cloud-upload-alt fa-3x text-primary mb-3"></i>
-                                    <h5>Arrastra y suelta imágenes aquí</h5>
-                                    <p class="text-muted">o haz clic para seleccionar archivos</p>
-                                    <small class="text-muted">Formatos: JPG, PNG, GIF, WEBP - Máx. 5MB por imagen</small>
-                                    <input type="file" name="images[]" id="imageInput" multiple 
-                                           accept=".jpg,.jpeg,.png,.gif,.webp" style="display: none;">
+                                <div class="alert alert-info mb-2">
+                                    <i class="fas fa-image me-2"></i>
+                                    La imagen se asigna automáticamente según la plataforma seleccionada. No necesitas subir archivos.
                                 </div>
+
+                                <div class="upload-area d-none" id="uploadArea"></div>
+                                <input type="file" name="images[]" id="imageInput" multiple 
+                                       accept=".jpg,.jpeg,.png,.gif,.webp" style="display:none;">
+
+                                <!-- Vista previa de la imagen predeterminada -->
                                 <div class="image-preview-container" id="imagePreviewContainer"></div>
-                                <div class="form-text">Puedes subir hasta 5 imágenes. La primera imagen será la principal.</div>
+                                <div class="form-text">La primera (y única) imagen será la predeterminada por plataforma.</div>
                             </div>
 
                             <!-- Especificaciones de la Cuenta -->
@@ -407,16 +374,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])) {
                                         <label class="form-label fw-bold">Plataforma *</label>
                                         <select class="form-select" name="platform" id="platformSelect" required>
                                             <option value="">Seleccionar plataforma</option>
-                                            <option value="netflix" <?php echo ($_POST['platform'] ?? '') == 'netflix' ? 'selected' : ''; ?>>Netflix</option>
-                                            <option value="disney" <?php echo ($_POST['platform'] ?? '') == 'disney' ? 'selected' : ''; ?>>Disney+</option>
-                                            <option value="hbo" <?php echo ($_POST['platform'] ?? '') == 'hbo' ? 'selected' : ''; ?>>HBO Max</option>
-                                            <option value="spotify" <?php echo ($_POST['platform'] ?? '') == 'spotify' ? 'selected' : ''; ?>>Spotify</option>
-                                            <option value="youtube" <?php echo ($_POST['platform'] ?? '') == 'youtube' ? 'selected' : ''; ?>>YouTube Premium</option>
-                                            <option value="amazon" <?php echo ($_POST['platform'] ?? '') == 'amazon' ? 'selected' : ''; ?>>Amazon Prime</option>
-                                            <option value="apple" <?php echo ($_POST['platform'] ?? '') == 'apple' ? 'selected' : ''; ?>>Apple TV+</option>
-                                            <option value="paramount" <?php echo ($_POST['platform'] ?? '') == 'paramount' ? 'selected' : ''; ?>>Paramount+</option>
-                                            <option value="star" <?php echo ($_POST['platform'] ?? '') == 'star' ? 'selected' : ''; ?>>Star+</option>
-                                            <option value="other" <?php echo ($_POST['platform'] ?? '') == 'other' ? 'selected' : ''; ?>>Otra Plataforma</option>
+                                            <option value="netflix"   <?php echo (($_POST['platform'] ?? '') == 'netflix') ? 'selected' : ''; ?>>Netflix</option>
+                                            <option value="disney"    <?php echo (($_POST['platform'] ?? '') == 'disney') ? 'selected' : ''; ?>>Disney+</option>
+                                            <option value="hbo"       <?php echo (($_POST['platform'] ?? '') == 'hbo') ? 'selected' : ''; ?>>HBO Max</option>
+                                            <option value="spotify"   <?php echo (($_POST['platform'] ?? '') == 'spotify') ? 'selected' : ''; ?>>Spotify</option>
+                                            <option value="youtube"   <?php echo (($_POST['platform'] ?? '') == 'youtube') ? 'selected' : ''; ?>>YouTube Premium</option>
+                                            <option value="amazon"    <?php echo (($_POST['platform'] ?? '') == 'amazon') ? 'selected' : ''; ?>>Amazon Prime</option>
+                                            <option value="apple"     <?php echo (($_POST['platform'] ?? '') == 'apple') ? 'selected' : ''; ?>>Apple TV+</option>
+                                            <option value="paramount" <?php echo (($_POST['platform'] ?? '') == 'paramount') ? 'selected' : ''; ?>>Paramount+</option>
+                                            <option value="star"      <?php echo (($_POST['platform'] ?? '') == 'star') ? 'selected' : ''; ?>>Star+</option>
+                                            <option value="other"     <?php echo (($_POST['platform'] ?? '') == 'other') ? 'selected' : ''; ?>>Otra Plataforma</option>
                                         </select>
                                     </div>
                                 </div>
@@ -425,10 +392,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])) {
                                         <label class="form-label fw-bold">Tipo de Cuenta *</label>
                                         <select class="form-select" name="account_type" required>
                                             <option value="">Seleccionar tipo</option>
-                                            <option value="shared" <?php echo ($_POST['account_type'] ?? '') == 'shared' ? 'selected' : ''; ?>>Compartida</option>
-                                            <option value="personal" <?php echo ($_POST['account_type'] ?? '') == 'personal' ? 'selected' : ''; ?>>Personal</option>
-                                            <option value="family" <?php echo ($_POST['account_type'] ?? '') == 'family' ? 'selected' : ''; ?>>Familiar</option>
-                                            <option value="premium" <?php echo ($_POST['account_type'] ?? '') == 'premium' ? 'selected' : ''; ?>>Premium</option>
+                                            <option value="shared"  <?php echo (($_POST['account_type'] ?? '') == 'shared')  ? 'selected' : ''; ?>>Compartida</option>
+                                            <option value="personal"<?php echo (($_POST['account_type'] ?? '') == 'personal') ? 'selected' : ''; ?>>Personal</option>
+                                            <option value="family"  <?php echo (($_POST['account_type'] ?? '') == 'family')  ? 'selected' : ''; ?>>Familiar</option>
+                                            <option value="premium" <?php echo (($_POST['account_type'] ?? '') == 'premium') ? 'selected' : ''; ?>>Premium</option>
                                         </select>
                                         <div class="form-text">Define el tipo de acceso de la cuenta.</div>
                                     </div>
@@ -437,13 +404,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])) {
                                     <div class="mb-3">
                                         <label class="form-label fw-bold">Duración (Días) *</label>
                                         <select class="form-select" name="duration_days" required>
-                                            <option value="7" <?php echo ($_POST['duration_days'] ?? '') == '7' ? 'selected' : ''; ?>>7 días</option>
-                                            <option value="15" <?php echo ($_POST['duration_days'] ?? '') == '15' ? 'selected' : ''; ?>>15 días</option>
-                                            <option value="30" <?php echo ($_POST['duration_days'] ?? '30') == '30' ? 'selected' : ''; ?>>30 días</option>
-                                            <option value="60" <?php echo ($_POST['duration_days'] ?? '') == '60' ? 'selected' : ''; ?>>60 días</option>
-                                            <option value="90" <?php echo ($_POST['duration_days'] ?? '') == '90' ? 'selected' : ''; ?>>90 días</option>
-                                            <option value="180" <?php echo ($_POST['duration_days'] ?? '') == '180' ? 'selected' : ''; ?>>180 días</option>
-                                            <option value="365" <?php echo ($_POST['duration_days'] ?? '') == '365' ? 'selected' : ''; ?>>365 días</option>
+                                            <option value="7"   <?php echo (($_POST['duration_days'] ?? '') == '7')   ? 'selected' : ''; ?>>7 días</option>
+                                            <option value="15"  <?php echo (($_POST['duration_days'] ?? '') == '15')  ? 'selected' : ''; ?>>15 días</option>
+                                            <option value="30"  <?php echo ((($_POST['duration_days'] ?? '30') == '30')) ? 'selected' : ''; ?>>30 días</option>
+                                            <option value="60"  <?php echo (($_POST['duration_days'] ?? '') == '60')  ? 'selected' : ''; ?>>60 días</option>
+                                            <option value="90"  <?php echo (($_POST['duration_days'] ?? '') == '90')  ? 'selected' : ''; ?>>90 días</option>
+                                            <option value="180" <?php echo (($_POST['duration_days'] ?? '') == '180') ? 'selected' : ''; ?>>180 días</option>
+                                            <option value="365" <?php echo (($_POST['duration_days'] ?? '') == '365') ? 'selected' : ''; ?>>365 días</option>
                                         </select>
                                         <div class="form-text">Tiempo de duración garantizado de la cuenta.</div>
                                     </div>
@@ -518,16 +485,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])) {
                         <div class="card">
                             <div class="card-header bg-info text-white">
                                 <h6 class="card-title mb-0">
-                                    <i class="fas fa-lightbulb me-2"></i>Consejos para Imágenes
+                                    <i class="fas fa-lightbulb me-2"></i>Imágenes
                                 </h6>
                             </div>
                             <div class="card-body">
-                                <ul class="list-unstyled">
-                                    <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Usa imágenes de alta calidad</li>
-                                    <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Muestra capturas de pantalla reales</li>
-                                    <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Incluye el logo de la plataforma</li>
-                                    <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Muestra las características principales</li>
-                                    <li><i class="fas fa-check text-success me-2"></i>La primera imagen será la principal</li>
+                                <ul class="list-unstyled mb-0">
+                                    <li><i class="fas fa-check text-success me-2"></i>La imagen se asigna automáticamente según la plataforma.</li>
+                                    <li><i class="fas fa-check text-success me-2"></i>Si la imagen de plataforma no existe, se usa la genérica.</li>
+                                    <li><i class="fas fa-check text-success me-2"></i>Puedes cambiar la plataforma para ver otra previsualización.</li>
                                 </ul>
                             </div>
                         </div>
@@ -536,16 +501,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])) {
                         <div class="card">
                             <div class="card-header bg-warning text-dark">
                                 <h6 class="card-title mb-0">
-                                    <i class="fas fa-exclamation-triangle me-2"></i>Formatos Permitidos
+                                    <i class="fas fa-exclamation-triangle me-2"></i>Nota
                                 </h6>
                             </div>
                             <div class="card-body">
-                                <ul class="list-unstyled">
-                                    <li class="mb-2"><i class="fas fa-image text-primary me-2"></i>JPG/JPEG - Hasta 5MB</li>
-                                    <li class="mb-2"><i class="fas fa-image text-primary me-2"></i>PNG - Hasta 5MB</li>
-                                    <li class="mb-2"><i class="fas fa-image text-primary me-2"></i>GIF - Hasta 5MB</li>
-                                    <li><i class="fas fa-image text-primary me-2"></i>WEBP - Hasta 5MB</li>
-                                </ul>
+                                <p class="mb-0">Coloca los archivos PNG en <code><?php echo $upload_dir; ?></code> con los nombres definidos para cada plataforma.</p>
                             </div>
                         </div>
                     </div>
@@ -557,156 +517,116 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_product'])) {
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
     <script>
+    // ==========================
+    // Mapa JS de imágenes por plataforma (coincide con PHP)
+    // ==========================
+    const PLATFORM_IMAGES = {
+        netflix:   'netflix.png',
+        disney:    'disney.png',
+        hbo:       'hbo.png',
+        spotify:   'spotify.png',
+        youtube:   'youtube.png',
+        amazon:    'primevideo.png',
+        apple:     'appletv.png',
+        paramount: 'paramount.png',
+        star:      'starplus.png',
+        other:     'generic.png'
+    };
+    const UPLOAD_DIR = '<?php echo rtrim($upload_dir, "/")."/"; ?>';
+
+    // Renderiza la previsualización de la imagen predeterminada
+    function renderDefaultPreview(platform) {
+        const imagePreviewContainer = document.getElementById('imagePreviewContainer');
+        imagePreviewContainer.innerHTML = ''; // limpia
+
+        const file = PLATFORM_IMAGES[platform] || PLATFORM_IMAGES['other'];
+        const url  = UPLOAD_DIR + file;
+
+        const preview = document.createElement('div');
+        preview.className = 'image-preview';
+        preview.innerHTML = `<img src="${url}" alt="${platform}">`;
+
+        imagePreviewContainer.appendChild(preview);
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
         // Manejo de características
-        document.addEventListener('DOMContentLoaded', function() {
-            const featureBadges = document.querySelectorAll('.feature-badge');
-            const selectedFeaturesInput = document.getElementById('selectedFeatures');
-            let selectedFeatures = JSON.parse(selectedFeaturesInput.value || '[]');
+        const featureBadges = document.querySelectorAll('.feature-badge');
+        const selectedFeaturesInput = document.getElementById('selectedFeatures');
+        let selectedFeatures = [];
 
-            // Actualizar badges seleccionados
-            function updateSelectedFeatures() {
-                featureBadges.forEach(badge => {
-                    const feature = badge.getAttribute('data-feature');
-                    if (selectedFeatures.includes(feature)) {
-                        badge.classList.add('selected', 'bg-success', 'text-white');
-                        badge.classList.remove('bg-outline-secondary');
-                    } else {
-                        badge.classList.remove('selected', 'bg-success', 'text-white');
-                        badge.classList.add('bg-outline-secondary');
-                    }
-                });
-                selectedFeaturesInput.value = JSON.stringify(selectedFeatures);
-            }
+        try {
+            selectedFeatures = JSON.parse(selectedFeaturesInput.value || '[]');
+        } catch(e) { selectedFeatures = []; }
 
-            // Click en características
+        function updateSelectedFeatures() {
             featureBadges.forEach(badge => {
-                badge.addEventListener('click', function() {
-                    const feature = this.getAttribute('data-feature');
-                    const index = selectedFeatures.indexOf(feature);
-                    
-                    if (index > -1) {
-                        selectedFeatures.splice(index, 1);
-                    } else {
-                        selectedFeatures.push(feature);
-                    }
-                    
-                    updateSelectedFeatures();
-                });
-            });
-
-            // Inicializar características
-            updateSelectedFeatures();
-
-            // Manejo de imágenes
-            const uploadArea = document.getElementById('uploadArea');
-            const imageInput = document.getElementById('imageInput');
-            const imagePreviewContainer = document.getElementById('imagePreviewContainer');
-            const maxImages = 5;
-            let currentImages = 0;
-
-            // Click en área de upload
-            uploadArea.addEventListener('click', function() {
-                imageInput.click();
-            });
-
-            // Drag and drop
-            uploadArea.addEventListener('dragover', function(e) {
-                e.preventDefault();
-                uploadArea.classList.add('dragover');
-            });
-
-            uploadArea.addEventListener('dragleave', function() {
-                uploadArea.classList.remove('dragover');
-            });
-
-            uploadArea.addEventListener('drop', function(e) {
-                e.preventDefault();
-                uploadArea.classList.remove('dragover');
-                handleFiles(e.dataTransfer.files);
-            });
-
-            // Cambio en input de archivos
-            imageInput.addEventListener('change', function() {
-                handleFiles(this.files);
-            });
-
-            // Función para manejar archivos
-            function handleFiles(files) {
-                for (let file of files) {
-                    if (currentImages >= maxImages) {
-                        alert(`Solo puedes subir hasta ${maxImages} imágenes.`);
-                        break;
-                    }
-
-                    if (file.type.startsWith('image/')) {
-                        const reader = new FileReader();
-                        
-                        reader.onload = function(e) {
-                            const preview = document.createElement('div');
-                            preview.className = 'image-preview';
-                            preview.innerHTML = `
-                                <img src="${e.target.result}" alt="Preview">
-                                <button type="button" class="remove-image" onclick="removeImage(this)">
-                                    <i class="fas fa-times"></i>
-                                </button>
-                            `;
-                            imagePreviewContainer.appendChild(preview);
-                            currentImages++;
-                        };
-                        
-                        reader.readAsDataURL(file);
-                    }
-                }
-                
-                // Actualizar input de archivos
-                updateFileInput();
-            }
-
-            // Función para remover imagen
-            window.removeImage = function(button) {
-                const preview = button.parentElement;
-                preview.remove();
-                currentImages--;
-                updateFileInput();
-            };
-
-            // Actualizar input de archivos
-            function updateFileInput() {
-                // Esta función mantiene la referencia a los archivos seleccionados
-                // En una implementación real, podrías usar FormData para manejar múltiples archivos
-            }
-
-            // Validación de precio
-            const priceInput = document.querySelector('input[name="price"]');
-            priceInput.addEventListener('change', function() {
-                if (this.value < 1) {
-                    this.value = 1;
+                const feature = badge.getAttribute('data-feature');
+                if (selectedFeatures.includes(feature)) {
+                    badge.classList.add('selected', 'bg-success', 'text-white');
+                    badge.classList.remove('bg-outline-secondary');
+                } else {
+                    badge.classList.remove('selected', 'bg-success', 'text-white');
+                    badge.classList.add('bg-outline-secondary');
                 }
             });
+            selectedFeaturesInput.value = JSON.stringify(selectedFeatures);
+        }
 
-            // Validación de stock
-            const stockInput = document.querySelector('input[name="stock"]');
-            stockInput.addEventListener('change', function() {
-                if (this.value < 1) {
-                    this.value = 1;
-                } else if (this.value > 100) {
-                    this.value = 100;
+        featureBadges.forEach(badge => {
+            badge.addEventListener('click', function() {
+                const feature = this.getAttribute('data-feature');
+                const index = selectedFeatures.indexOf(feature);
+                if (index > -1) {
+                    selectedFeatures.splice(index, 1);
+                } else {
+                    selectedFeatures.push(feature);
                 }
-            });
-
-            // Limpiar previsualizaciones al resetear
-            document.getElementById('resetBtn').addEventListener('click', function() {
-                imagePreviewContainer.innerHTML = '';
-                currentImages = 0;
+                updateSelectedFeatures();
             });
         });
 
-        // Prevenir envío doble del formulario
-        document.getElementById('productForm').addEventListener('submit', function() {
-            const submitBtn = this.querySelector('button[type="submit"]');
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Agregando...';
+        updateSelectedFeatures();
+
+        // Previsualización automática por plataforma
+        const platformSelect = document.getElementById('platformSelect');
+
+        // Render inicial (si viene precargada la plataforma desde POST)
+        if (platformSelect.value) {
+            renderDefaultPreview(platformSelect.value);
+        }
+
+        // Al cambiar la plataforma, actualiza preview
+        platformSelect.addEventListener('change', function() {
+            const value = this.value || 'other';
+            renderDefaultPreview(value);
         });
+
+        // Validación de precio
+        const priceInput = document.querySelector('input[name="price"]');
+        priceInput.addEventListener('change', function() {
+            if (this.value < 1) this.value = 1;
+        });
+
+        // Validación de stock
+        const stockInput = document.querySelector('input[name="stock"]');
+        stockInput.addEventListener('change', function() {
+            if (this.value < 1) this.value = 1;
+            else if (this.value > 100) this.value = 100;
+        });
+
+        // Limpiar previsualizaciones al resetear
+        document.getElementById('resetBtn').addEventListener('click', function() {
+            document.getElementById('imagePreviewContainer').innerHTML = '';
+        });
+    });
+
+    // Prevenir envío doble del formulario
+    document.getElementById('productForm').addEventListener('submit', function() {
+        const submitBtn = this.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Agregando...';
+    });
     </script>
 </body>
 </html>
